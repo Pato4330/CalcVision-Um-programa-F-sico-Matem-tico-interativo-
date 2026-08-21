@@ -4,18 +4,44 @@ from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 import time
 import math
+import numpy as np
 
-captura = cv.VideoCapture(0)
+captura = cv.VideoCapture(0, cv.CAP_MSMF)
+
+captura.set(cv.CAP_PROP_FOURCC, cv.VideoWriter_fourcc(*'MJPG'))
+captura.set(cv.CAP_PROP_FRAME_WIDTH, 640)
+captura.set(cv.CAP_PROP_FRAME_HEIGHT, 480)
+captura.set(cv.CAP_PROP_FPS, 60)
+
+print("abriu:", captura.isOpened())
+print("largura:", captura.get(cv.CAP_PROP_FRAME_WIDTH))
+print("altura:", captura.get(cv.CAP_PROP_FRAME_HEIGHT))
+print("fps:", captura.get(cv.CAP_PROP_FPS))
+
+resultado = None
+
+def resultado_maos(res, imagem, timestamp):
+    global resultado
+    resultado = res
+
 configs = vision.HandLandmarkerOptions(
-    base_options = python.BaseOptions(model_asset_path="hand_landmarker.task"))
-maos = vision.HandLandmarker.create_from_options(configs)
+    base_options = python.BaseOptions(model_asset_path="hand_landmarker.task"),
+    running_mode=vision.RunningMode.LIVE_STREAM,
+    num_hands=2,
+    result_callback=resultado_maos
+    )
 
-largura = 640
-altura = 480
+maos = vision.HandLandmarker.create_from_options(configs)
 
 temp = time.time()
 tempct = 0
 fps = 0
+
+largura = 640
+altura = 480
+debug = False
+debug1 = False
+rotateH = False
 
 linhas = [
     (0, 1),
@@ -52,276 +78,291 @@ linhas = [
 ]
 
 fingers_ind = 0
-indicador = False
 fingers_med = 0
-medio = False
 fingers_anl = 0
-anelar = False
 fingers_min = 0
-minimo = False
 fingers_ded = 0
-dedao = False
 
 #--------------------------------
 indV1x = 0
 indV1y = 0
-indV1tam = 0
 
 indV2x = 0
 indV2y = 0
-indV2tam = 0
 
 indV3x = 0
 indV3y = 0
-indV3tam = 0
 
 indprodV1_2 = 0
 indprodV2_3 = 0
-
-indV1_2cos = 0
-indV2_3cos = 0
-
-indAng1 = 0
-indAng2 = 0
 #--------------------------------
 
 medV1x = 0
 medV1y = 0
-medV2tam = 0 
 
 medV2x = 0
 medV2y = 0
-medV2tam = 0
 
 medV3x = 0
 medV3y = 0
-medV3tam = 0
 
 medprodV1_2 = 0
 medprocV2_3 = 0
 
-medV1_2cos = 0
-medV2_3cos = 0
-
-medAng1 = 0
-medAng2 = 0
 #--------------------------------
 
 anlV1x = 0
 anlV1y = 0
-anlV1tam = 0
 
 anlV2x = 0
 anlV2y = 0
-anlV2tam = 0
 
 anlV3x = 0
 anlV3y = 0
-anlV3tam = 0
 
 anlprodV1_2 = 0
 anlprodV2_3 = 0
 
-anlV1_2cos = 0
-anlV2_3cos = 0
-
-anlAng1 = 0
-anlAng2 = 0
 #--------------------------------
 
 minV1x = 0
 minV1y = 0
-minV1tam = 0
 
 minV2x = 0
 minV2y = 0
-minV2tam = 0
 
 minV3x = 0
 minV3y = 0
-minV3tam = 0
 
 minprodV1_2 = 0
 minprodV2_3 = 0
 
-minV1_2cos = 0
-minV2_3cos = 0
-
-minAng1 = 0
-minAng2 = 0
 #--------------------------------
 
 dedV1x = 0
 dedV1y = 0
-dedV1tam = 0
 
 dedV2x = 0
 dedV2y = 0
-dedV2tam = 0
 
 dedV3x = 0
 dedV3y = 0
-dedV3tam = 0
 
 distded = 0
 #--------------------------------
+polindDistance = [0.0, 0.0]
+clicando = [False, False]
+
+le = [[[0.0, 0.0] for _ in range(21)] for _ in range(2)]
+tenho = [False, False]
+alpha = 0.80
+
 
 if not captura.isOpened():
     print("Erro")
 
 while True:
+    indicador = [False, False]
+    medio = [False, False]
+    anelar = [False, False]
+    minimo = [False, False]
+    distded = [0.0, 0.0]
+    tammao = [0.0, 0.0]
+
     ret, frame = captura.read()
     if not ret:
         break
-    frame = cv.rotate(frame, cv.ROTATE_180)
+    if rotateH:
+        frame = cv.rotate(frame, cv.ROTATE_180)
+
+
+    rgb = np.ascontiguousarray(frame[:, :, ::-1])
+    
+    imagem = mp.Image(
+        image_format = mp.ImageFormat.SRGB,
+        data = rgb
+    )
+    timestamp = int(time.time() * 1000)
+    maos.detect_async(imagem, timestamp)
+
+    
+    if resultado is not None:
+        for ind, m in enumerate(resultado.hand_landmarks):
+            if not tenho[ind]:
+                for i in range(21):
+                    le[ind][i][0] = m[i].x
+                    le[ind][i][1] = m[i].y
+                    tenho[ind] = True
+            else:
+                for i in range(21):
+                    le[ind][i][0] = alpha * m[i].x + (1 - alpha) * le[ind][i][0]
+                    le[ind][i][1] = alpha * m[i].y + (1 - alpha) * le[ind][i][1]
+
+
+            for i in range(21):
+                x = int(le[ind][i][0] * largura)
+                y = int(le[ind][i][1] * altura)
+                if debug:
+                    cv.circle(frame, (x, y), 5, (0, 128, 0), -1)
+
+            for a, b in linhas:
+                l1x = int(le[ind][a][0] * largura)
+                l1y = int(le[ind][a][1] * altura)
+
+                l2x = int(le[ind][b][0] * largura)
+                l2y = int(le[ind][b][1] * altura)
+                if debug:
+                    cv.line(frame, (l1x, l1y), (l2x, l2y), (255, 255, 255), 1)
+
+    #----------------------------Indicador----------------------------
+
+            indV1x = (le[ind][6][0] - le[ind][5][0])
+            indV1y = (le[ind][6][1] - le[ind][5][1])
+            indV2x = (le[ind][7][0] - le[ind][6][0])
+            indV2y = (le[ind][7][1] - le[ind][6][1])
+            indV3x = (le[ind][8][0] - le[ind][7][0])
+            indV3y = (le[ind][8][1] - le[ind][7][1])
+
+            indprodV1_2 = (indV1x * indV2x) + (indV1y * indV2y)
+            indprodV2_3 = (indV2x * indV3x) + (indV2y * indV3y)
+
+            if indprodV1_2 > 0 and indprodV2_3 > 0:
+                indicador[ind] = True
+            else:
+                indicador[ind] = False
+
+    #----------------------------Medio----------------------------
+
+        
+            medV1x = (le[ind][10][0] - le[ind][9][0])
+            medV1y = (le[ind][10][1] - le[ind][9][1])
+            medV2x = (le[ind][11][0] - le[ind][10][0])
+            medV2y = (le[ind][11][1] - le[ind][10][1])
+            medV3x = (le[ind][12][0] - le[ind][11][0])
+            medV3y = (le[ind][12][1] - le[ind][11][1])
+
+            medprodV1_2 = (medV1x * medV2x) + (medV1y * medV2y)
+            medprodV2_3 = (medV2x * medV3x) + (medV2y * medV3y)
+
+            if medprodV1_2 > 0 and medprodV2_3 > 0:
+                medio[ind] = True
+            else:
+                medio[ind] = False
+    #----------------------------Anelas----------------------------
+
+            anlV1x = (le[ind][14][0] - le[ind][13][0])
+            anlV1y = (le[ind][14][1] - le[ind][13][1])
+            anlV2x = (le[ind][15][0] - le[ind][14][0])
+            anlV2y = (le[ind][15][1] - le[ind][14][1])
+            anlV3x = (le[ind][16][0] - le[ind][15][0])
+            anlV3y = (le[ind][16][1] - le[ind][15][1])
+
+            anlprodV1_2 = (anlV1x * anlV2x) + (anlV1y * anlV2y)
+            anlprodV2_3 = (anlV2x * anlV3x) + (anlV2y * anlV3y)
+
+            if anlprodV1_2 > 0 and anlprodV2_3 > 0:
+                anelar[ind] = True
+            else:
+                anelar[ind] = False
+    #----------------------------Minimo----------------------------
+
+            minV1x = (le[ind][18][0] - le[ind][17][0])
+            minV1y = (le[ind][18][1] - le[ind][17][1])
+            minV2x = (le[ind][19][0] - le[ind][18][0])
+            minV2y = (le[ind][19][1] - le[ind][18][1])
+            minV3x = (le[ind][20][0] - le[ind][19][0])
+            minV3y = (le[ind][20][1] - le[ind][19][1])
+
+            minprodV1_2 = (minV1x * minV2x) + (minV1y * minV2y)
+            minprodV2_3 = (minV2x * minV3x) + (minV2y * minV3y)
+
+            if minprodV1_2 > 0 and minprodV2_3 > 0:
+                minimo[ind] = True
+            else:
+                minimo[ind] = False
+    #----------------------------Polegar----------------------------      
+
+            distded[ind] = math.sqrt(
+                (le[ind][4][0] - le[ind][0][0]) ** 2 +
+                (le[ind][4][1] - le[ind][0][1]) ** 2
+            )
+
+            tammao[ind] = math.sqrt(
+            (le[ind][9][0] - le[ind][0][0]) ** 2 +
+            (le[ind][9][1] - le[ind][0][1]) ** 2
+            )
+
+            distded[ind] = distded[ind]/tammao[ind]
+
+            if debug == False:
+                cv.circle(frame, (x, y), 5, (0, 0, 128), -1)
+
+            if indicador[ind] == True:
+                x = int(le[ind][8][0] * largura)
+                y = int(le[ind][8][1] * altura)
+                
+
+            polindDistance[ind] = math.sqrt(
+                (le[ind][4][0] - le[ind][8][0]) ** 2 +
+                (le[ind][4][1] - le[ind][8][1]) ** 2)
+
+            polindDistance[ind] = polindDistance[ind]/tammao[ind]
+
+            if polindDistance[ind] < 0.25 and clicando[ind] == False:
+                clicando[ind] = True
+                
+            elif polindDistance[ind] > 0.3:
+                clicando[ind] = False
+        
+                if debug1:
+                    x = int(le[ind][4][0] * largura)
+                    y = int(le[ind][4][1] * altura)
+                    x1 = int(le[ind][8][0] * largura)
+                    y1 = int(le[ind][8][1] * altura)
+                    cv.line(frame, (x, y), (x1, y1), (255, 255, 255), 1)
+                    cv.putText(frame, (f"{polindDistance[ind]:.2f}"), ((x - 30), (y - 30)), cv.FONT_HERSHEY_SIMPLEX, .5, (255, 255, 255), 1)
+
+
+
+    
+    fingers_ind = sum(1 for x in indicador if x)
+    fingers_med = sum(1 for x in medio if x)
+    fingers_anl = sum(1 for x in anelar if x)
+    fingers_min = sum(1 for x in minimo if x)
+    fingers_ded = sum(1 for x in distded if x > 1)
 
     tempct +=1
     tempAtual = time.time()
-
+    
     if (tempAtual - temp) > 1:
         fps = tempct
         tempct = 0
         temp = tempAtual
 
-    cv.putText(frame, (f"FPS: {fps}"), (10, 20), cv.FONT_HERSHEY_SIMPLEX, .5, (255, 255, 255), 1)
-    rgb = cv.cvtColor( frame , cv.COLOR_BGR2RGB)
-    
+    if debug:
+        cv.putText(frame, (f"Dedos: {(fingers_ind + fingers_med + fingers_anl + fingers_min + fingers_ded)}"), (10, 40), cv.FONT_HERSHEY_SIMPLEX, .5, (255, 255, 255), 1)
+        cv.putText(frame, (f"FPS: {fps}"), (10, 20), cv.FONT_HERSHEY_SIMPLEX, .5, (255, 255, 255), 1)
+        cv.putText(frame, (f"Alpha: {alpha:.2f}"), (10, 60), cv.FONT_HERSHEY_SIMPLEX, .5, (255, 255, 255), 1)
 
-    imagem = mp.Image(
-        image_format = mp.ImageFormat.SRGB,
-        data = rgb
-    )
-
-    resultado = maos.detect(imagem)
-
-    for m in resultado.hand_landmarks:
-        for i in m:
-            x = round((i.x) * largura)
-            y = round((i.y) * altura)
-            cv.circle(frame, (x, y), 5, (0, 128, 0), -1)
-        for a, b in linhas:
-            l1x = round((m[a].x) * largura)
-            l1y = round((m[a].y) * altura)
-
-            l2x = round((m[b].x) * largura)
-            l2y = round((m[b].y) * altura)
-            cv.line(frame, (l1x, l1y), (l2x, l2y), (255, 255, 255), 1)
-
-#----------------------------Indicador----------------------------
-
-        indV1x = (m[6].x - m[5].x)
-        indV1y = (m[6].y - m[5].y)
-        indV2x = (m[7].x - m[6].x)
-        indV2y = (m[7].y - m[6].y)
-        indV3x = (m[8].x - m[7].x)
-        indV3y = (m[8].y - m[7].y)
-
-        indprodV1_2 = (indV1x * indV2x) + (indV1y * indV2y)
-        indprodV2_3 = (indV2x * indV3x) + (indV2y * indV3y)
-        indV1tam = math.sqrt((indV1x * indV1x) + (indV1y * indV1y))
-        indV2tam = math.sqrt((indV2x * indV2x) + (indV2y * indV2y))
-        indV3tam = math.sqrt((indV3x * indV3x) + (indV3y * indV3y))
-        indV1_2cos = (indprodV1_2 / (indV1tam * indV2tam))
-        indV2_3cos = (indprodV2_3 / (indV2tam * indV3tam))
-        indAng1 = math.degrees(math.acos(indV1_2cos))
-        indAng2 = math.degrees(math.acos(indV2_3cos))
-
-        if indAng1 < 90 and indAng2 < 90:
-            indicador = True
-        else:
-            indicador = False
-
-#----------------------------Medio----------------------------
-
-    
-        medV1x = (m[10].x - m[9].x)
-        medV1y = (m[10].y - m[9].y)
-        medV2x = (m[11].x - m[10].x)
-        medV2y = (m[11].y - m[10].y)
-        medV3x = (m[12].x - m[11].x)
-        medV3y = (m[12].y - m[11].y)
-
-        medprodV1_2 = (medV1x * medV2x) + (medV1y * medV2y)
-        medprodV2_3 = (medV2x * medV3x) + (medV2y * medV3y)
-        medV1tam = math.sqrt((medV1x * medV1x) + (medV1y * medV1y))
-        medV2tam = math.sqrt((medV2x * medV2x) + (medV2y * medV2y))
-        medV3tam = math.sqrt((medV3x * medV3x) + (medV3y * medV3y))
-        medV1_2cos = (medprodV1_2 / (medV1tam * medV2tam))
-        medV2_3cos = (medprodV2_3 / (medV2tam * medV3tam))
-        medAng1 = math.degrees(math.acos(medV1_2cos))
-        medAng2 = math.degrees(math.acos(medV2_3cos))
-
-        if medAng1 < 90 and medAng2 < 90:
-            medio = True
-        else:
-            medio = False
-#----------------------------Anelas----------------------------
-
-        anlV1x = (m[14].x - m[13].x)
-        anlV1y = (m[14].y - m[13].y)
-        anlV2x = (m[15].x - m[14].x)
-        anlV2y = (m[15].y - m[14].y)
-        anlV3x = (m[16].x - m[15].x)
-        anlV3y = (m[16].y - m[15].y)
-
-        anlprodV1_2 = (anlV1x * anlV2x) + (anlV1y * anlV2y)
-        anlprodV2_3 = (anlV2x * anlV3x) + (anlV2y * anlV3y)
-        anlV1tam = math.sqrt((anlV1x * anlV1x) + (anlV1y * anlV1y))
-        anlV2tam = math.sqrt((anlV2x * anlV2x) + (anlV2y * anlV2y))
-        anlV3tam = math.sqrt((anlV3x * anlV3x) + (anlV3y * anlV3y))
-        anlV1_2cos = (anlprodV1_2 / (anlV1tam * anlV2tam))
-        anlV2_3cos = (anlprodV2_3 / (anlV2tam * anlV3tam))
-        anlAng1 = math.degrees(math.acos(anlV1_2cos))
-        anlAng2 = math.degrees(math.acos(anlV2_3cos))
-
-        if anlAng1 < 90 and anlAng2 < 90:
-            anelar = True
-        else:
-            anelar = False
-
-#----------------------------Anelas----------------------------
-
-        minV1x = (m[10].x - m[9].x)
-        minV1y = (m[10].y - m[9].y)
-        minV2x = (m[11].x - m[10].x)
-        minV2y = (m[11].y - m[10].y)
-        minV3x = (m[12].x - m[11].x)
-        minV3y = (m[12].y - m[11].y)
-
-        minprodV1_2 = (minV1x * minV2x) + (minV1y * minV2y)
-        minprodV2_3 = (minV2x * minV3x) + (minV2y * minV3y)
-        minV1tam = math.sqrt((minV1x * minV1x) + (minV1y * minV1y))
-        minV2tam = math.sqrt((minV2x * minV2x) + (minV2y * minV2y))
-        minV3tam = math.sqrt((minV3x * minV3x) + (minV3y * minV3y))
-        minV1_2cos = (minprodV1_2 / (minV1tam * minV2tam))
-        minV2_3cos = (minprodV2_3 / (minV2tam * minV3tam))
-        minAng1 = math.degrees(math.acos(minV1_2cos))
-        minAng2 = math.degrees(math.acos(minV2_3cos))
-
-        if minAng1 < 90 and minAng2 < 90:
-            minimo = True
-        else:
-            minimo = False
- #----------------------------Anelas----------------------------      
-
-        distded = math.sqrt(
-            (m[4].x - m[0].x) ** 2 +
-            (m[4].y - m[0].y) ** 2
-        )
-
-    fingers_ind = 1 if indicador else 0
-    fingers_med = 1 if medio else 0
-    fingers_anl = 1 if anelar else 0
-    fingers_min = 1 if minimo else 0
-    fingers_ded = 1 if distded > 0.20 else 0
-
-
-
-    cv.putText(frame, (f"Dedos: {(fingers_ind + fingers_med + fingers_anl + fingers_min + fingers_ded)}"), (80, 20), cv.FONT_HERSHEY_SIMPLEX, .5, (255, 255, 255), 1)
+    key = (cv.waitKey(1) & 0xFF)
 
     cv.imshow("Video", frame)
-    if (cv.waitKey(1) & 0xFF) == ord("e"):
+
+    if key == ord('d'):
+        debug = not debug
+    elif key == ord('e'):
         break
+    elif key == ord('r'):
+        rotateH = not rotateH
+    elif key == ord('+'):
+        alpha = min(alpha + 0.01, 1.0)
+    elif key == ord('-'):
+        alpha = max(alpha - 0.01, 0.0)
+    elif key == ord('1'):
+        debug1 = not debug1
+
+    
+
 
 
 captura.release()
